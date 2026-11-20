@@ -16,7 +16,7 @@ declare -A IMAGES=(
 find_latest_version() {
   local image=$1
   # Try to get version from Labels first
-  local version=$(skopeo inspect docker://${image} 2>/dev/null | jq -r '.Labels.version // empty')
+  local version=$(skopeo inspect --override-os linux docker://${image} 2>/dev/null | jq -r '.Labels.version // empty')
 
   # If no version label, get latest tag
   if [[ -z "$version" ]]; then
@@ -29,8 +29,15 @@ find_latest_version() {
 # Get manifest list digest for an image:tag (multi-arch)
 get_manifest_list_digest() {
   local image_url=$1
-  skopeo inspect --no-tags docker://${image_url} | jq -r '.Digest'
+  skopeo inspect --override-os linux --no-tags docker://${image_url} | jq -r '.Digest'
 }
+
+# BSD sed (macOS) requires an empty backup suffix for -i. GNU sed does not.
+if [[ "$(uname)" == Darwin ]]; then
+  SED_INPLACE=(sed -i '' -E)
+else
+  SED_INPLACE=(sed -i -E)
+fi
 
 # Update image SHA in YAML files
 update_yaml_files() {
@@ -40,10 +47,10 @@ update_yaml_files() {
   echo "Updating: ${image_prefix} -> ${image_sha}"
 
   # Update all YAML files
-  sed -i -E "s%(${image_prefix}).*%\1@${image_sha}%" config/openshift/base/operator.yaml
-  sed -i -E "s%(${image_prefix}).*%\1@${image_sha}%" operatorhub/openshift/config.yaml
-  sed -i -E "s%(${image_prefix}).*%\1@${image_sha}%" operatorhub/openshift/release-artifacts/bundle/manifests/*.yaml
-  find cmd/openshift/operator/kodata/tekton-addon/addons/ -type f -name "*.yaml" -exec sed -i -E "s%(${image_prefix}).*%\1@${image_sha}%" {} +
+  "${SED_INPLACE[@]}" "s%(${image_prefix}).*%\1@${image_sha}%" config/openshift/base/operator.yaml
+  "${SED_INPLACE[@]}" "s%(${image_prefix}).*%\1@${image_sha}%" operatorhub/openshift/config.yaml
+  "${SED_INPLACE[@]}" "s%(${image_prefix}).*%\1@${image_sha}%" operatorhub/openshift/release-artifacts/bundle/manifests/*.yaml
+  find cmd/openshift/operator/kodata/tekton-addon/addons/ -type f -name "*.yaml" -exec "${SED_INPLACE[@]}" "s%(${image_prefix}).*%\1@${image_sha}%" {} +
 }
 
 # Main
